@@ -12,37 +12,50 @@ const connectDB = require('./config/db');
 const seed = require('./seed/seedData');
 const { startStockCron } = require('./jobs/stockCron');
 
+// Check required environment variables
 if (!process.env.JWT_SECRET) {
-  console.error('JWT_SECRET missing in .env');
+  console.error('JWT_SECRET missing in environment variables');
   process.exit(1);
 }
 
+// Initialize Express and HTTP server
 const app = express();
 const server = http.createServer(app);
 
-// Allow both local development and deployed frontend
+// Allowed frontend origins
 const allowedOrigins = [
   'http://localhost:5173',
-  process.env.CLIENT_URL
-].filter(Boolean);
+  'https://slice-pizza-website.vercel.app'
+];
 
+// CORS configuration
 const corsOptions = {
-  origin: allowedOrigins,
-  credentials: true
+  origin: (origin, callback) => {
+    // Allow requests without an origin
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked origin: ${origin}`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 };
 
-// Express CORS
+// Express middleware
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
 
-// Socket.IO setup
+// Initialize Socket.IO
 const io = new Server(server, {
   cors: corsOptions
 });
 
 app.set('io', io);
 
-// Socket authentication
+// Socket.IO authentication middleware
 io.use((socket, next) => {
   try {
     const token = socket.handshake.auth?.token;
@@ -51,7 +64,11 @@ io.use((socket, next) => {
       return next(new Error('unauthorized'));
     }
 
-    socket.user = jwt.verify(token, process.env.JWT_SECRET);
+    socket.user = jwt.verify(
+      token,
+      process.env.JWT_SECRET
+    );
+
     next();
 
   } catch (error) {
@@ -59,7 +76,7 @@ io.use((socket, next) => {
   }
 });
 
-// Socket connection
+// Socket.IO connection handler
 io.on('connection', (socket) => {
   socket.join('user:' + socket.user.id);
 
@@ -70,7 +87,7 @@ io.on('connection', (socket) => {
   console.log(`Socket connected: ${socket.id}`);
 });
 
-// Health check
+// Health check route
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,
@@ -78,15 +95,23 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Routes
+// API routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/pizzas', require('./routes/pizzas'));
 app.use('/api/inventory', require('./routes/inventory'));
 app.use('/api/orders', require('./routes/orders'));
 
-// Error handler
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Route not found'
+  });
+});
+
+// Global error handler
 app.use((err, req, res, next) => {
-  console.error(err);
+  console.error('Server Error:', err.message);
 
   res.status(500).json({
     success: false,
@@ -98,6 +123,7 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
   try {
     await connectDB();
+
     await seed();
 
     startStockCron();
