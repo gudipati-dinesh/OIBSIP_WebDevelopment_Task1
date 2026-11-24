@@ -1,20 +1,48 @@
-const nodemailer = require('nodemailer');
 
-let transporter = null;
-if (process.env.SMTP_HOST && process.env.SMTP_USER) {
-  const port = Number(process.env.SMTP_PORT) || 587;
-  transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST, port, secure: port === 465,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  });
-}
-exports.mailConfigured = !!transporter;
+const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
+
+exports.mailConfigured = !!(
+  process.env.BREVO_API_KEY &&
+  process.env.MAIL_FROM
+);
 
 exports.sendMail = async ({ to, subject, html, text }) => {
-  if (!transporter) {
-    console.log(`\n📧 [SMTP not configured — email printed here]\nTo: ${to}\nSubject: ${subject}\n${text || html}\n`);
+  if (!exports.mailConfigured) {
+    console.log(
+      `\n📧 [Brevo not configured — email printed here]\nTo: ${to}\nSubject: ${subject}\n${text || html}\n`
+    );
     return { sent: false };
   }
-  await transporter.sendMail({ from: process.env.MAIL_FROM || process.env.SMTP_USER, to, subject, html, text });
-  return { sent: true };
+
+  const response = await fetch(BREVO_API_URL, {
+    method: 'POST',
+    headers: {
+      'accept': 'application/json',
+      'api-key': process.env.BREVO_API_KEY,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      sender: {
+        name: 'Slice Pizza',
+        email: process.env.MAIL_FROM,
+      },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+      textContent: text,
+    }),
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    console.error('Brevo email error:', result);
+    throw new Error(
+      result.message || `Brevo API failed with status ${response.status}`
+    );
+  }
+
+  console.log('Email accepted by Brevo:', result.messageId);
+
+  return { sent: true, messageId: result.messageId };
 };
