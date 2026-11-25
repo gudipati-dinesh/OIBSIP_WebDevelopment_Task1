@@ -44,3 +44,12 @@ pizza-app/
 ## Author
 
 Dinesh
+
+
+Live Demo
+
+🚀 Visit the deployed application:
+https://slice-pizza-website.vercel.app/
+
+GitHub Repository:
+https://github.com/gudipati-dinesh/OIBSIP_WebDevelopment_Task1
